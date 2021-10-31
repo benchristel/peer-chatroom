@@ -1,0 +1,23 @@
+{
+  "name": "chatroom",
+  "version": "0.0.0",
+  "description": "Peer-to-peer chat demo",
+  "main": "index.js",
+  "author": "Ben Christel <bchristel@pivotal.io>",
+  "license": "MIT",
+  "scripts": {
+    "serve": "snowpack dev",
+    "ts": "node_modules/.bin/tsc --watch",
+    "test": "open http://localhost:8080/test.html",
+    "fix": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "build": "snowpack build"
+  },
+  "devDependencies": {
+    "@benchristel/taste": "^0.1.1",
+    "snowpack": "^3.8.8",
+    "typescript": "^4.4.4"
+  },
+  "dependencies": {
+    "preact": "^10.5.15"
+  }
+}
