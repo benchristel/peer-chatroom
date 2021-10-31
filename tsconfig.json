@@ -20,7 +20,7 @@
     "strictBindCallApply": true,
     "exactOptionalPropertyTypes": true,
 
-    //"noUnusedLocals": true,
+    "noUnusedLocals": true,
     "allowUnreachableCode": false,
 
     "allowJs": false,

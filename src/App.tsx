@@ -2,40 +2,18 @@ import {h, Fragment} from "preact"
 import {useState, useEffect} from "preact/hooks"
 import {join} from "./chatroom"
 import type {Room, ConnectionStatus} from "./chatroom"
-import {merge, append, toArray} from "./CrdtLog"
+import {append, toArray} from "./CrdtLog"
 import type {CrdtLog} from "./CrdtLog"
-
-type State =
-  | {connection: "pending"}
-  | {connection: "reconnecting"}
-  | {connection: "connected"}
-
-type AsyncCallbacks<Result> = {
-  onSuccess: (result: Result) => unknown,
-  onError: (error: Error) => unknown,
-}
-
-function callAsync<T, A>(
-  f: (arg: A) => Promise<T>,
-  args: A,
-  callbacks: AsyncCallbacks<T>,
-): void {
-  f(args)
-    .then(callbacks.onSuccess)
-    .catch(callbacks.onError)
-}
 
 const myAgentId = String(Math.random())
 export function App(): JSX.Element {
   const [room, setRoom] = useState<null | Room<string>>(null)
-  const [state, setState] = useState<State>({connection: "pending"})
+  const [connStatus, setConnStatus] = useState<ConnectionStatus>("pending")
   const [chatLog, setChatLog] = useState<CrdtLog<string>>({nextIndex: 0, entries: {}})
 
   useEffect(() => {
     join("ben", {
-      handleConnectionStatusChanged(status) {
-        setState({connection: status})
-      },
+      handleConnectionStatusChanged: setConnStatus,
       handleMessage(message) {
         setChatLog(chatLog => append("", message, chatLog))
       },
@@ -46,7 +24,7 @@ export function App(): JSX.Element {
   }, [])
 
   return <ChatView
-    connection={state.connection}
+    connStatus={connStatus}
     onSubmit={message => {
       room?.say(message)
       setChatLog(append(myAgentId, message, chatLog))
@@ -56,11 +34,11 @@ export function App(): JSX.Element {
 }
 
 function ChatView(props: {
-  connection: ConnectionStatus,
+  connStatus: ConnectionStatus,
   chatLog: CrdtLog<string>,
   onSubmit: (message: string) => unknown,
 }): JSX.Element {
-  switch (props.connection) {
+  switch (props.connStatus) {
     case "pending":
       return <p>loading...</p>
     case "reconnecting":
