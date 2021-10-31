@@ -3,5 +3,8 @@ export default {
   buildOptions: {
     sourcemap: "inline",
     out: "dist",
+  },
+  devOptions: {
+    port: 8000,
   }
 }
