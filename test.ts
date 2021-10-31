@@ -1,4 +1,4 @@
-import "./index"
+import "./src/App"
 
 import {formatTestResultsAsText, runTests, getAllTests} from "@benchristel/taste"
 

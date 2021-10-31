@@ -2,6 +2,8 @@ import {h, Fragment} from "preact"
 import {useState, useEffect} from "preact/hooks"
 import {join} from "./chatroom"
 import type {Room} from "./chatroom"
+import {merge, append, toArray} from "./CrdtLog"
+import type {CrdtLog} from "./CrdtLog"
 
 type State =
   | {connection: "pending"}
@@ -21,43 +23,6 @@ function callAsync<T, A>(
   f(args)
     .then(callbacks.onSuccess)
     .catch(callbacks.onError)
-}
-
-type CrdtLog<T> = {
-  nextIndex: number,
-  entries: {
-    [position: string]: T,
-  },
-}
-
-function merge<T>(a: CrdtLog<T>, b: CrdtLog<T>): CrdtLog<T> {
-  const nextIndex = Math.max(a.nextIndex, b.nextIndex)
-  const entries = {...a.entries, ...b.entries}
-  return {nextIndex, entries}
-}
-
-function toArray<T>(log: CrdtLog<T>): Array<T> {
-  return Object.entries(log.entries)
-    .sort(([a], [b]) => {
-      const aIndex = Number(a.split(":")[0])
-      const bIndex = Number(b.split(":")[0])
-      if (aIndex !== bIndex) {
-        return aIndex - bIndex
-      } else {
-        return a > b ? 1 : -1
-      }
-    })
-    .map(([key, value]) => value)
-}
-
-function append<T>(agentId: string, item: T, log: CrdtLog<T>): CrdtLog<T> {
-  return {
-    nextIndex: log.nextIndex + 1,
-    entries: {
-      ...log.entries,
-      [log.nextIndex + ":" + agentId]: item,
-    },
-  }
 }
 
 const myAgentId = String(Math.random())

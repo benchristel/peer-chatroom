@@ -80,6 +80,7 @@ type HostConfig<Msg> = {
   handleDeath: () => unknown,
 }
 
+// behaveAsHost assumes the peer passed to it is already open.
 export function behaveAsHost<Msg>(peer: Peer, {getGreeting, handleMessage, handleDeath}: HostConfig<Msg>): (msg: Msg) => void {
   const connections: Array<DataConnection> = []
 
