@@ -8,7 +8,39 @@ type RoomConfig<Msg> = {
   getGreeting: () => Msg,
 }
 
-export type ConnectionStatus = "pending" | "connected" | "reconnecting"
+export type ConnectionStatus =
+  | "pending"
+  | "connected"
+  | "reconnecting"
+
+type Send<Msg> = (msg: Msg) => void
+
+async function joinAsClient<Msg>(
+  config: BehaviorConfig<Msg>,
+): Promise<Send<Msg>> {
+  let peer = await tryToCreatePeer()
+  return behaveAsClient(peer, config)
+}
+
+async function claimHost<Msg>(
+  config: BehaviorConfig<Msg>,
+): Promise<Send<Msg>> {
+  let peer = await tryToClaimHost(config.hostId)
+  return behaveAsHost(peer, config)
+}
+
+async function backOff(config: unknown): Promise<never> {
+  await sleep(2)
+  throw new Error("Failed to connect as either host or client. Waiting a bit...")
+}
+
+function *cycleForever<T>(options: Array<T>) {
+  while (true) {
+    for (let option of options) {
+      yield option
+    }
+  }
+}
 
 export async function join<Msg>(
   roomName: string,
@@ -29,10 +61,10 @@ export async function join<Msg>(
   }
 
   async function init(): Promise<(msg: Msg) => void> {
-    while (true) {
+    for (const strategy of cycleForever([claimHost, joinAsClient, backOff])) {
       try {
-        const peer = await tryToClaimHost(hostId)
-        const send = behaveAsHost<Msg>(peer, {
+        const send = await strategy({
+          hostId,
           handleMessage: config.handleMessage,
           getGreeting: config.getGreeting,
           handleDeath: reconnect,
@@ -40,21 +72,10 @@ export async function join<Msg>(
         config.handleConnectionStatusChanged("connected")
         return send
       } catch (e) {
-        try {
-          const peer = await tryToCreatePeer()
-          const send = behaveAsClient<Msg>(peer, {
-            hostId,
-            handleMessage: config.handleMessage,
-            getGreeting: config.getGreeting,
-            handleDeath: reconnect,
-          })
-          config.handleConnectionStatusChanged("connected")
-          return send
-        } catch (e) {
-          await sleep(2)
-        }
+        // go around again
       }
     }
+    return () => {} // unreachable
   }
 }
 
@@ -72,14 +93,22 @@ async function tryToCreatePeer(peerId?: string): Promise<Peer> {
   })
 }
 
-type HostConfig<Msg> = {
+type BehaviorConfig<Msg> = {
+  hostId: string,
   handleMessage: (msg: Msg) => unknown,
   getGreeting: () => Msg,
   handleDeath: () => unknown,
 }
 
 // behaveAsHost assumes the peer passed to it is already open.
-export function behaveAsHost<Msg>(peer: Peer, {getGreeting, handleMessage, handleDeath}: HostConfig<Msg>): (msg: Msg) => void {
+export function behaveAsHost<Msg>(
+  peer: Peer,
+  {
+    getGreeting,
+    handleMessage,
+    handleDeath,
+  }: BehaviorConfig<Msg>,
+): Send<Msg> {
   const connections: Array<DataConnection> = []
 
   peer.on("connection", (conn: DataConnection) => {
@@ -113,15 +142,16 @@ export function behaveAsHost<Msg>(peer: Peer, {getGreeting, handleMessage, handl
   return say
 }
 
-type ClientConfig<Msg> = {
-  hostId: string,
-  handleMessage: (msg: Msg) => unknown,
-  getGreeting: () => Msg,
-  handleDeath: () => unknown,
-}
-
 // behaveAsClient assumes the peer passed to it is already open.
-async function behaveAsClient<Msg>(peer: Peer, {hostId, handleMessage, getGreeting, handleDeath}: ClientConfig<Msg>): Promise<(msg: Msg) => void> {
+async function behaveAsClient<Msg>(
+  peer: Peer,
+  {
+    hostId,
+    handleMessage,
+    getGreeting,
+    handleDeath,
+  }: BehaviorConfig<Msg>,
+): Promise<Send<Msg>> {
   return new Promise(resolve => {
     const hostConnection = peer.connect(hostId)
     hostConnection.on("open", () => {
