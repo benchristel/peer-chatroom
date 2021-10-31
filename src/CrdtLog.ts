@@ -44,6 +44,21 @@ test("CrdtLog.merge", {
   }
 })
 
+test("CrdtLog.append", {
+  "appends items without mutating the original log"() {
+    const originalLog = empty()
+    expect(toArray(append("", "hi", originalLog)), equals, ["hi"])
+    expect(originalLog, equals, empty())
+  },
+
+  "keeps previously appended items"() {
+    let log = empty()
+    log = append("", "foo", log)
+    log = append("", "bar", log)
+    expect(toArray(log), equals, ["foo", "bar"])
+  },
+})
+
 export function empty<T>(): CrdtLog<T> {
   return {
     nextIndex: 0,

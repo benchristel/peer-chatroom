@@ -1,7 +1,7 @@
 import {h, Fragment} from "preact"
 import {useState, useEffect} from "preact/hooks"
 import {join} from "./chatroom"
-import type {Room} from "./chatroom"
+import type {Room, ConnectionStatus} from "./chatroom"
 import {merge, append, toArray} from "./CrdtLog"
 import type {CrdtLog} from "./CrdtLog"
 
@@ -45,7 +45,22 @@ export function App(): JSX.Element {
     })
   }, [])
 
-  switch (state.connection) {
+  return <ChatView
+    connection={state.connection}
+    onSubmit={message => {
+      room?.say(message)
+      setChatLog(append(myAgentId, message, chatLog))
+    }}
+    chatLog={chatLog}
+  />
+}
+
+function ChatView(props: {
+  connection: ConnectionStatus,
+  chatLog: CrdtLog<string>,
+  onSubmit: (message: string) => unknown,
+}): JSX.Element {
+  switch (props.connection) {
     case "pending":
       return <p>loading...</p>
     case "reconnecting":
@@ -53,11 +68,8 @@ export function App(): JSX.Element {
     case "connected":
       return <>
         <p>Connected!</p>
-        <ChatLog data={chatLog}/>
-        <ChatInput onSubmit={message => {
-          room?.say(message)
-          setChatLog(append(myAgentId, message, chatLog))
-        }}/>
+        <ChatLog data={props.chatLog}/>
+        <ChatInput onSubmit={props.onSubmit}/>
       </>
   }
 }

@@ -8,7 +8,7 @@ type RoomConfig<Msg> = {
   getGreeting: () => Msg,
 }
 
-type ConnectionStatus = "pending" | "connected" | "reconnecting"
+export type ConnectionStatus = "pending" | "connected" | "reconnecting"
 
 export async function join<Msg>(
   roomName: string,
