@@ -37,7 +37,6 @@ export async function join<Msg>(
           getGreeting: config.getGreeting,
           handleDeath: reconnect,
         })
-        console.log("became the host of " + hostId)
         config.handleConnectionStatusChanged("connected")
         return send
       } catch (e) {
@@ -49,7 +48,6 @@ export async function join<Msg>(
             getGreeting: config.getGreeting,
             handleDeath: reconnect,
           })
-          console.log("joined " + hostId)
           config.handleConnectionStatusChanged("connected")
           return send
         } catch (e) {
@@ -86,9 +84,7 @@ export function behaveAsHost<Msg>(peer: Peer, {getGreeting, handleMessage, handl
 
   peer.on("connection", (conn: DataConnection) => {
     conn.on("open", () => {
-      console.log("received connection from client")
       connections.push(conn)
-      console.log("host will greet client: " + getGreeting())
       conn.send(getGreeting())
     })
     conn.on("close", () => remove(conn, connections))
@@ -127,10 +123,8 @@ type ClientConfig<Msg> = {
 // behaveAsClient assumes the peer passed to it is already open.
 async function behaveAsClient<Msg>(peer: Peer, {hostId, handleMessage, getGreeting, handleDeath}: ClientConfig<Msg>): Promise<(msg: Msg) => void> {
   return new Promise(resolve => {
-    console.log("client will establish connection to host")
     const hostConnection = peer.connect(hostId)
     hostConnection.on("open", () => {
-      console.log("client will greet host", getGreeting())
       hostConnection.send(getGreeting())
       resolve((msg: Msg) => {
         hostConnection.send(msg)
@@ -154,7 +148,6 @@ async function behaveAsClient<Msg>(peer: Peer, {hostId, handleMessage, getGreeti
 function sleep(seconds: number) {
   return new Promise(resolve => setTimeout(resolve, seconds * 1000))
 }
-
 
 function remove<T>(elem: T, array: Array<T>): void {
   const index = array.indexOf(elem)
