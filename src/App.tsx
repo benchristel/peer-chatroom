@@ -37,7 +37,7 @@ export function App(): JSX.Element {
         setState({connection: status})
       },
       handleMessage(message) {
-        setChatLog(append("", message, chatLog))
+        setChatLog(chatLog => append("", message, chatLog))
       },
       getGreeting: () => "hello"
     }).then(room => {
