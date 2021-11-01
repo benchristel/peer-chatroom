@@ -75,30 +75,24 @@ async function joinAsClient<Msg>(
     handleDeath,
   } = config
 
-  let resolved = false
-  return new Promise(async (resolve, reject) => {
-    console.log("connecting to " + hostId)
-    const hostConnection = await connect(peer, hostId)
-    hostConnection.send(getGreeting())
-    resolved = true
-    resolve((msg: Msg) => {
-      hostConnection.send(msg)
-    })
-    hostConnection.on("close", die)
-    hostConnection.on("error", die)
-    hostConnection.on("data", (msg: Msg) => {
-      handleMessage(msg)
-    })
+  console.log("connecting to " + hostId)
+  const host: DataConnection = await connect(peer, hostId)
 
-    peer.on("error", die)
+  host.send(getGreeting())
+  host.on("data", (msg: Msg) => handleMessage(msg))
+  host.on("close", die)
+  host.on("error", die)
+  peer.on("error", die)
 
-    function die(error: Error) {
-      console.log("I've lost touch with the host, and can't go on", error)
-      peer.destroy()
-      if (!resolved) reject()
-      else handleDeath()
-    }
-  })
+  function die(error: Error) {
+    console.log("I've lost touch with the host, and can't go on", error)
+    peer.destroy()
+    handleDeath()
+  }
+
+  return (msg: Msg) => {
+    host.send(msg)
+  }
 }
 
 async function host<Msg>(
