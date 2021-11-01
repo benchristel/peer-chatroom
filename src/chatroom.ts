@@ -1,11 +1,7 @@
+import {sleep, remove, cycleForever} from "./substrate"
+
 export type Room<Msg> = {
   say: (message: Msg) => void,
-}
-
-type RoomConfig<Msg> = {
-  handleMessage: (message: Msg) => unknown,
-  handleConnectionStatusChanged: (status: ConnectionStatus) => unknown,
-  getGreeting: () => Msg,
 }
 
 export type ConnectionStatus =
@@ -13,33 +9,10 @@ export type ConnectionStatus =
   | "connected"
   | "reconnecting"
 
-type Send<Msg> = (msg: Msg) => void
-
-async function joinAsClient<Msg>(
-  config: BehaviorConfig<Msg>,
-): Promise<Send<Msg>> {
-  let peer = await tryToCreatePeer()
-  return behaveAsClient(peer, config)
-}
-
-async function claimHost<Msg>(
-  config: BehaviorConfig<Msg>,
-): Promise<Send<Msg>> {
-  let peer = await tryToClaimHost(config.hostId)
-  return behaveAsHost(peer, config)
-}
-
-async function backOff(config: unknown): Promise<never> {
-  await sleep(2)
-  throw new Error("Failed to connect as either host or client. Waiting a bit...")
-}
-
-function *cycleForever<T>(options: Array<T>) {
-  while (true) {
-    for (let option of options) {
-      yield option
-    }
-  }
+export type RoomConfig<Msg> = {
+  handleMessage: (message: Msg) => unknown,
+  handleConnectionStatusChanged: (status: ConnectionStatus) => unknown,
+  getGreeting: () => Msg,
 }
 
 export async function join<Msg>(
@@ -61,7 +34,7 @@ export async function join<Msg>(
   }
 
   async function init(): Promise<(msg: Msg) => void> {
-    for (const strategy of cycleForever([claimHost, joinAsClient, backOff])) {
+    for (const strategy of cycleForever([host, joinAsClient, backOff])) {
       try {
         const send = await strategy({
           hostId,
@@ -72,6 +45,7 @@ export async function join<Msg>(
         config.handleConnectionStatusChanged("connected")
         return send
       } catch (e) {
+        console.warn(e)
         // go around again
       }
     }
@@ -79,19 +53,7 @@ export async function join<Msg>(
   }
 }
 
-async function tryToClaimHost(hostId: string): Promise<Peer> {
-  return tryToCreatePeer(hostId)
-}
-
-async function tryToCreatePeer(peerId?: string): Promise<Peer> {
-  return new Promise((resolve, reject) => {
-    const peer = new Peer(peerId)
-    peer.on("open", () => {
-      resolve(peer)
-    })
-    peer.on("error", reject)
-  })
-}
+type Send<Msg> = (msg: Msg) => void
 
 type BehaviorConfig<Msg> = {
   hostId: string,
@@ -100,15 +62,57 @@ type BehaviorConfig<Msg> = {
   handleDeath: () => unknown,
 }
 
-// behaveAsHost assumes the peer passed to it is already open.
-export function behaveAsHost<Msg>(
-  peer: Peer,
-  {
+async function joinAsClient<Msg>(
+  config: BehaviorConfig<Msg>,
+): Promise<Send<Msg>> {
+  let peer = await createPeer()
+  console.log("Joined as client")
+
+  const {
+    hostId,
+    handleMessage,
+    getGreeting,
+    handleDeath,
+  } = config
+
+  let resolved = false
+  return new Promise(async (resolve, reject) => {
+    console.log("connecting to " + hostId)
+    const hostConnection = await connect(peer, hostId)
+    hostConnection.send(getGreeting())
+    resolved = true
+    resolve((msg: Msg) => {
+      hostConnection.send(msg)
+    })
+    hostConnection.on("close", die)
+    hostConnection.on("error", die)
+    hostConnection.on("data", (msg: Msg) => {
+      handleMessage(msg)
+    })
+
+    peer.on("error", die)
+
+    function die(error: Error) {
+      console.log("I've lost touch with the host, and can't go on", error)
+      peer.destroy()
+      if (!resolved) reject()
+      else handleDeath()
+    }
+  })
+}
+
+async function host<Msg>(
+  config: BehaviorConfig<Msg>,
+): Promise<Send<Msg>> {
+  let peer = await createPeer(config.hostId)
+  console.log("Joined as host")
+
+  const {
     getGreeting,
     handleMessage,
     handleDeath,
-  }: BehaviorConfig<Msg>,
-): Send<Msg> {
+  } = config
+
   const connections: Array<DataConnection> = []
 
   peer.on("connection", (conn: DataConnection) => {
@@ -135,52 +139,35 @@ export function behaveAsHost<Msg>(
     handleDeath()
   })
 
-  function say(msg: Msg) {
+  return function(msg: Msg) {
     connections.forEach(conn => conn.send(msg))
   }
-
-  return say
 }
 
-// behaveAsClient assumes the peer passed to it is already open.
-async function behaveAsClient<Msg>(
-  peer: Peer,
-  {
-    hostId,
-    handleMessage,
-    getGreeting,
-    handleDeath,
-  }: BehaviorConfig<Msg>,
-): Promise<Send<Msg>> {
-  return new Promise(resolve => {
-    const hostConnection = peer.connect(hostId)
-    hostConnection.on("open", () => {
-      hostConnection.send(getGreeting())
-      resolve((msg: Msg) => {
-        hostConnection.send(msg)
-      })
-    })
-    hostConnection.on("close", die)
-    hostConnection.on("error", die)
-    hostConnection.on("data", (msg: Msg) => {
-      handleMessage(msg)
-    })
+async function backOff(config: unknown): Promise<never> {
+  await sleep(2)
+  throw new Error("Failed to connect as either host or client. Waiting a bit...")
+}
 
-    peer.on("error", die)
+async function connect(me: Peer, otherPeerId: string): Promise<DataConnection> {
+  return new Promise((resolve, reject) => {
+    let conn: void | DataConnection
+    me.on("error", reject)
+    conn = me.connect(otherPeerId)
+    conn.on("error", reject)
+    conn.on("close", reject)
 
-    function die() {
-      peer.destroy()
-      handleDeath()
-    }
+    conn.on("open", () => {
+      console.log("successfully connected to " + otherPeerId)
+      resolve(conn)
+    })
   })
 }
 
-function sleep(seconds: number) {
-  return new Promise(resolve => setTimeout(resolve, seconds * 1000))
-}
-
-function remove<T>(elem: T, array: Array<T>): void {
-  const index = array.indexOf(elem)
-  if (index < 0) return;
-  array.splice(index, 1)
+async function createPeer(peerId?: string): Promise<Peer> {
+  return new Promise((resolve, reject) => {
+    const peer = new Peer(peerId)
+    peer.on("open", () => resolve(peer))
+    peer.on("error", reject)
+  })
 }
