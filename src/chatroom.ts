@@ -10,14 +10,14 @@ export type ConnectionStatus =
   | "reconnecting"
 
 export type RoomConfig<Msg> = {
-  handleMessage: (message: Msg) => unknown,
-  handleConnectionStatusChanged: (status: ConnectionStatus) => unknown,
+  onMessage: (message: Msg) => unknown,
+  onConnectionStatusChanged: (status: ConnectionStatus) => unknown,
   getGreeting: () => Msg,
 }
 
 export async function join<Msg>(
   roomName: string,
-  config: RoomConfig<Msg>,
+  config: Readonly<RoomConfig<Msg>>,
 ): Promise<Room<Msg>> {
   const hostId = "howdy-" + roomName
   let send = await init()
@@ -29,20 +29,20 @@ export async function join<Msg>(
 
   async function reconnect() {
     send = () => {}
-    config.handleConnectionStatusChanged("reconnecting")
+    config.onConnectionStatusChanged("reconnecting")
     send = await init()
   }
 
   async function init(): Promise<(msg: Msg) => void> {
-    for (const strategy of cycleForever([host, joinAsClient, backOff])) {
+    for (const strategy of cycleForever([createHost, createClient, backOff])) {
       try {
         const send = await strategy({
           hostId,
-          handleMessage: config.handleMessage,
+          onMessage: config.onMessage,
           getGreeting: config.getGreeting,
-          handleDeath: reconnect,
+          onDeath: reconnect,
         })
-        config.handleConnectionStatusChanged("connected")
+        config.onConnectionStatusChanged("connected")
         return send
       } catch (e) {
         console.warn(e)
@@ -55,39 +55,41 @@ export async function join<Msg>(
 
 type Send<Msg> = (msg: Msg) => void
 
-type BehaviorConfig<Msg> = {
+type PeerConfig<Msg> = {
   hostId: string,
-  handleMessage: (msg: Msg) => unknown,
+  onMessage: (msg: Msg) => unknown,
   getGreeting: () => Msg,
-  handleDeath: () => unknown,
+  onDeath: () => unknown,
 }
 
-async function joinAsClient<Msg>(
-  config: BehaviorConfig<Msg>,
+async function createClient<Msg>(
+  config: PeerConfig<Msg>,
 ): Promise<Send<Msg>> {
-  let peer = await createPeer()
+  let self = await createPeer()
   console.log("Joined as client")
 
   const {
     hostId,
-    handleMessage,
+    onMessage,
     getGreeting,
-    handleDeath,
+    onDeath,
   } = config
 
   console.log("connecting to " + hostId)
-  const host: DataConnection = await connect(peer, hostId)
-
+  const host: DataConnection = await connect(self, hostId)
   host.send(getGreeting())
-  host.on("data", (msg: Msg) => handleMessage(msg))
+  host.on("data", (msg: Msg) => onMessage(msg))
+
+  // if anything bad happens, destroy the peer. The host
+  // might be gone, and we might need to become the new host.
   host.on("close", die)
   host.on("error", die)
-  peer.on("error", die)
+  self.on("error", die)
 
   function die(error: Error) {
     console.log("I've lost touch with the host, and can't go on", error)
-    peer.destroy()
-    handleDeath()
+    self.destroy()
+    onDeath()
   }
 
   return (msg: Msg) => {
@@ -95,16 +97,16 @@ async function joinAsClient<Msg>(
   }
 }
 
-async function host<Msg>(
-  config: BehaviorConfig<Msg>,
+async function createHost<Msg>(
+  config: PeerConfig<Msg>,
 ): Promise<Send<Msg>> {
   let peer = await createPeer(config.hostId)
   console.log("Joined as host")
 
   const {
     getGreeting,
-    handleMessage,
-    handleDeath,
+    onMessage,
+    onDeath,
   } = config
 
   const connections: Array<DataConnection> = []
@@ -122,7 +124,7 @@ async function host<Msg>(
           otherConn.send(msg)
         }
       })
-      handleMessage(msg)
+      onMessage(msg)
     })
   })
 
@@ -130,7 +132,7 @@ async function host<Msg>(
     connections.forEach(conn => conn.close())
     connections.length = 0
     peer.destroy()
-    handleDeath()
+    onDeath()
   })
 
   return function(msg: Msg) {

@@ -21,8 +21,8 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     join("ben", {
-      handleConnectionStatusChanged: setConnStatus,
-      handleMessage(incoming: ChatLog) {
+      onConnectionStatusChanged: setConnStatus,
+      onMessage(incoming: ChatLog) {
         setChatLog(chatLog => merge(chatLog, incoming))
       },
       getGreeting: getChatLog,
@@ -51,7 +51,10 @@ function ChatView(props: {
     case "pending":
       return <p>loading...</p>
     case "reconnecting":
-      return <p>Error! Reconnecting...</p>
+      return <>
+        <p>Error! Reconnecting...</p>
+        <ChatLog data={props.chatLog}/>
+      </>
     case "connected":
       return <>
         <p>Connected!</p>
