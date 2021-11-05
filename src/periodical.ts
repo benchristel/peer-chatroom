@@ -16,7 +16,9 @@ export interface Pub<T> {
   pub(val: T): void,
 }
 
-export function createPeriodical<T>(val: T): Pub<T> & Sub<T> & Get<T> {
+export type Periodical<T> = Pub<T> & Sub<T> & Get<T>;
+
+export function createPeriodical<T>(val: T): Periodical<T> {
   const pubsub = createPubSub<T>()
   return {
     get,

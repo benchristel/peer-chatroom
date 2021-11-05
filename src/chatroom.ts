@@ -1,4 +1,5 @@
 import {sleep, remove, cycleForever} from "./substrate"
+import {createPeer, connect} from "./peers"
 
 export type Room<Msg> = {
   say: (message: Msg) => void,
@@ -101,6 +102,9 @@ async function createHost<Msg>(
   config: PeerConfig<Msg>,
 ): Promise<Send<Msg>> {
   let peer = await createPeer(config.hostId)
+  const clients: {[id: string]: true} = {
+    [peer.id]: true
+  }
   console.log("Joined as host")
 
   const {
@@ -112,12 +116,18 @@ async function createHost<Msg>(
   const connections: Array<DataConnection> = []
 
   peer.on("connection", (conn: DataConnection) => {
+    console.log("got connection", conn)
+    clients[conn.peer] = true
     conn.on("open", () => {
       connections.push(conn)
       conn.send(getGreeting())
+      conn.send({
+        type: "whosOnline",
+        data: clients,
+      })
     })
-    conn.on("close", () => remove(conn, connections))
-    conn.on("error", () => remove(conn, connections))
+    conn.on("close", () => disconnect(conn))
+    conn.on("error", () => disconnect(conn))
     conn.on("data", (msg: Msg) => {
       connections.forEach(otherConn => {
         if (otherConn !== conn) {
@@ -138,32 +148,22 @@ async function createHost<Msg>(
   return function(msg: Msg) {
     connections.forEach(conn => conn.send(msg))
   }
+
+  function disconnect(conn: DataConnection) {
+    remove(conn, connections)
+    delete clients[conn.peer]
+    connections.forEach(otherConn => {
+      if (otherConn !== conn) {
+        otherConn.send({
+          type: "whosOnline",
+          data: clients,
+        })
+      }
+    })
+  }
 }
 
 async function backOff(config: unknown): Promise<never> {
   await sleep(2)
   throw new Error("Failed to connect as either host or client. Waiting a bit...")
-}
-
-async function connect(me: Peer, otherPeerId: string): Promise<DataConnection> {
-  return new Promise((resolve, reject) => {
-    let conn: void | DataConnection
-    me.on("error", reject)
-    conn = me.connect(otherPeerId)
-    conn.on("error", reject)
-    conn.on("close", reject)
-
-    conn.on("open", () => {
-      console.log("successfully connected to " + otherPeerId)
-      resolve(conn)
-    })
-  })
-}
-
-async function createPeer(peerId?: string): Promise<Peer> {
-  return new Promise((resolve, reject) => {
-    const peer = new Peer(peerId)
-    peer.on("open", () => resolve(peer))
-    peer.on("error", reject)
-  })
 }
