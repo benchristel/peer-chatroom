@@ -1,63 +1,80 @@
 import {h, Fragment} from "preact"
 import {useState, useEffect} from "preact/hooks"
-import {join} from "./chatroom"
-import type {Room, ConnectionStatus} from "./chatroom"
+import {DistributedDocument} from "./DistributedDocument"
 import {append, toArray, merge} from "./CrdtLog"
 import type {CrdtLog} from "./CrdtLog"
+import type {NetworkStatus} from "./DistributedDocument"
 
 type ChatLog = CrdtLog<string>
 
 const myAgentId = String(Math.random())
 export function App(): JSX.Element {
-  const [room, setRoom] = useState<null | Room<ChatLog>>(null)
-  const [connStatus, setConnStatus] = useState<ConnectionStatus>("pending")
+  const [doc, setDoc] = useState<DistributedDocument<ChatLog> | null>(null)
+  const [connStatus, setConnStatus] = useState<NetworkStatus>("pending")
   const [chatLog, setChatLog] = useState<ChatLog>({nextIndex: 0, entries: {}})
-
-  function getChatLog(): ChatLog {
-    let chatLog: ChatLog
-    setChatLog(x => chatLog = x)
-    return chatLog!
-  }
+  const [whosOnline, setWhosOnline] = useState<Set<string>>(new Set([myAgentId]))
 
   useEffect(() => {
-    join("ben", {
-      onConnectionStatusChanged: setConnStatus,
-      onMessage(incoming: ChatLog) {
-        setChatLog(chatLog => merge(chatLog, incoming))
+    const docPromise = DistributedDocument<ChatLog>({
+      documentId: "chatroom",
+      agentId: Promise.resolve(myAgentId),
+      load() {
+        const json = localStorage["chatlog"] || '{"nextIndex":0,"entries":{}}'
+        return Promise.resolve(JSON.parse(json))
       },
-      getGreeting: getChatLog,
-    }).then(room => {
-      setRoom(room)
+      save(state: ChatLog) {
+        localStorage["chatlog"] = JSON.stringify(state)
+      },
+      merge(a: ChatLog, b: ChatLog) {
+        return merge(a, b)
+      },
     })
-  }, []) // passing [] as the second argument prevents re-joining on every render
 
-  return <ChatView
+    docPromise.then(doc => {
+      setDoc(doc)
+      setConnStatus(doc.networkStatus.get())
+      doc.networkStatus.sub(setConnStatus)
+      setChatLog(doc.state.get())
+      doc.state.sub(setChatLog)
+      doc.whosOnline.sub(setWhosOnline)
+    })
+
+    return () => docPromise.then(doc => doc.close())
+  }, []) // passing [] as the second argument prevents
+  // recreating the doc on every render, which would be slow
+
+  return doc && <ChatView
     connStatus={connStatus}
     onSubmit={message => {
-      const newChatLog = append(myAgentId, message, chatLog)
-      setChatLog(newChatLog)
-      room?.say(newChatLog)
+      const newChatLog = append(myAgentId, message, doc.state.get())
+      doc.apply(newChatLog)
     }}
     chatLog={chatLog}
-  />
+    peersOnline={whosOnline.size}
+  /> || <Loading/>
+}
+
+function Loading(): JSX.Element {
+  return <p>Loading...</p>
 }
 
 function ChatView(props: {
-  connStatus: ConnectionStatus,
+  connStatus: NetworkStatus,
   chatLog: ChatLog,
   onSubmit: (message: string) => unknown,
+  peersOnline: number,
 }): JSX.Element {
   switch (props.connStatus) {
     case "pending":
-      return <p>loading...</p>
     case "reconnecting":
       return <>
-        <p>Error! Reconnecting...</p>
+        <p>Looking for peers...</p>
         <ChatLog data={props.chatLog}/>
+        <ChatInput onSubmit={props.onSubmit}/>
       </>
     case "connected":
       return <>
-        <p>Connected!</p>
+        <p>Connected! {props.peersOnline} peers online</p>
         <ChatLog data={props.chatLog}/>
         <ChatInput onSubmit={props.onSubmit}/>
       </>

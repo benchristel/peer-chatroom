@@ -163,9 +163,15 @@ type AgentConfig<Data> = {
   getCurrentState: () => Data,
 }
 
+type ConnectionMetadata = {
+  agentId: string,
+  timeToLive: number,
+}
+
 async function createHost<Data>(config: AgentConfig<Data>): Promise<Agent<Data>> {
+  const timeToLiveSeconds = 10
   const hostId = "h" + config.documentId
-  const connections = new Map<DataConnection, string>()
+  const connections = new Map<DataConnection, ConnectionMetadata>()
   const [death, die] = resolvablePromise()
 
   let peer: Peer
@@ -177,14 +183,51 @@ async function createHost<Data>(config: AgentConfig<Data>): Promise<Agent<Data>>
     return deadAgent
   }
 
+  // on Firefox, PeerJS connections don't emit the "close"
+  // event. To ensure dead connections get cleaned up
+  // anyway, we have each peer send heartbeat messages while
+  // it is alive. If the host doesn't receive a heartbeat
+  // message for `timeToLiveSeconds`, it closes the
+  // connection.
+  const cleanupInterval = setInterval(() => {
+    let deletedAny = false
+    eachConnection(c => {
+      const metadata = connections.get(c)
+      if (metadata && --metadata.timeToLive <= 0) {
+        console.log("closing expired connection to " + metadata.agentId)
+        c.close()
+        connections.delete(c)
+        deletedAny = true
+      }
+    })
+    if (deletedAny) tellEveryoneWhosOnline()
+  }, 1000)
+
+  // If we get disconnected from the signaling server,
+  // it means the hostId is no longer reserved for us and
+  // the next peer to join the document will claim it,
+  // leading to a split-brained state. Destroy the peer to
+  // ensure there's only one host.
+  peer.on("disconnected", disconnect)
+
   peer.on("error", disconnect)
+
   peer.on("connection", (conn: DataConnection) => {
-    conn.on("close", () => (connections.delete(conn), tellEveryoneWhosOnline()))
-    conn.on("error", () => (connections.delete(conn), tellEveryoneWhosOnline()))
+    conn.on("close", () => closeConnection(conn))
+    conn.on("error", () => closeConnection(conn))
     conn.on("data", (msg: Message<Data>) => {
       switch (msg.type) {
+        case "heartbeat":
+          const metadata = connections.get(conn)
+          if (metadata) {
+            metadata.timeToLive = timeToLiveSeconds
+          }
+          break;
         case "hello":
-          connections.set(conn, msg.agentId)
+          connections.set(conn, {
+            agentId: msg.agentId,
+            timeToLive: timeToLiveSeconds,
+          })
           conn.send({type: "document", data: config.getCurrentState()})
           tellEveryoneWhosOnline()
           break;
@@ -201,8 +244,16 @@ async function createHost<Data>(config: AgentConfig<Data>): Promise<Agent<Data>>
   }
 
   function disconnect() {
+    clearInterval(cleanupInterval)
     peer.destroy()
     die()
+  }
+
+  function closeConnection(conn: DataConnection) {
+    console.log("connection lost; deleting it")
+    conn.close()
+    connections.delete(conn)
+    tellEveryoneWhosOnline()
   }
 
   function tellEveryoneWhosOnline() {
@@ -267,6 +318,10 @@ async function createClient<Data>(config: AgentConfig<Data>): Promise<Agent<Data
     data: config.getCurrentState(),
   })
 
+  const heartbeatInterval = setInterval(() => {
+    hostConn.send({type: "heartbeat"})
+  }, 5000)
+
   function send(data: Data) {
     hostConn.send({
       type: "document",
@@ -275,6 +330,7 @@ async function createClient<Data>(config: AgentConfig<Data>): Promise<Agent<Data
   }
 
   function disconnect() {
+    clearInterval(heartbeatInterval)
     peer.destroy()
     die()
   }
