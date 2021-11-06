@@ -32,8 +32,6 @@ export async function DistributedDocument<T>(
     config.agentId,
   ])
 
-  console.log("a")
-
   const state         = createPeriodical(initialState)
   const updates       = createPubSub<T>()
   const networkStatus = createPeriodical<NetworkStatus>("pending")
