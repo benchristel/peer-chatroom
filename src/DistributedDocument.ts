@@ -89,6 +89,9 @@ type Message<Data> =
       type: "document",
       data: Data,
     }
+  | {
+      type: "heartbeat",
+    }
 
 type Network<Data> = {
   send(d: Data): void,
@@ -255,7 +258,7 @@ async function createHost<Data>(config: AgentConfig<Data>): Promise<Agent<Data>>
   }
 
   function tellEveryoneWhosOnline() {
-    const agentIds = [config.id, ...connections.values()]
+    const agentIds = [config.id, ...[...connections.values()].map(x => x.agentId)]
     config.onOnlineAgentsChanged(new Set(agentIds))
     eachConnection(c =>
       c.send({

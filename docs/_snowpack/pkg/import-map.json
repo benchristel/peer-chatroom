@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "@benchristel/taste": "./@benchristel/taste.js",
+    "preact": "./preact.js",
+    "preact/hooks": "./preact/hooks.js"
+  }
+}
