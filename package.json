@@ -10,7 +10,7 @@
     "ts": "node_modules/.bin/tsc --watch",
     "test": "open http://localhost:8080/test.html",
     "fix": "prettier --write \"src/**/*.{ts,tsx}\"",
-    "build": "snowpack build"
+    "build": "snowpack build && touch docs/.nojekyll"
   },
   "devDependencies": {
     "@benchristel/taste": "^0.1.1",
