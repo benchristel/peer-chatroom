@@ -39,7 +39,21 @@ export function App(): JSX.Element {
       doc.whosOnline.sub(setWhosOnline)
     })
 
-    return () => docPromise.then(doc => doc.close())
+    window.addEventListener("storage", updateFromLocalStorage)
+
+    function updateFromLocalStorage(event: StorageEvent) {
+      if (event.storageArea === localStorage && event.key === "chatlog") {
+        const value = JSON.parse(localStorage["chatlog"] || '{"nextIndex":0,"entries":{}}')
+        docPromise.then(doc => {
+          doc.applyInMemory(value)
+        })
+      }
+    }
+
+    return () => {
+      docPromise.then(doc => doc.close())
+      window.removeEventListener("storage", updateFromLocalStorage)
+    }
   }, []) // passing [] as the second argument prevents
   // recreating the doc on every render, which would be slow
 

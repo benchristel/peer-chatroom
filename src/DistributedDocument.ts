@@ -8,6 +8,7 @@ export type DistributedDocument<T> = {
   readonly networkStatus: Sub<NetworkStatus> & Get<NetworkStatus>,
   readonly whosOnline: Sub<Set<string>> & Get<Set<string>>,
   apply(patch: T): void,
+  applyInMemory(patch: T): void,
   close(): void,
 }
 
@@ -61,14 +62,18 @@ export async function DistributedDocument<T>(
     networkStatus,
     whosOnline,
     apply,
+    applyInMemory,
     close,
   }
 
   function apply(patch: T): void {
-    const newState = config.merge(state.get(), patch)
-    config.save(newState)
-    state.pub(newState)
+    applyInMemory(patch)
+    config.save(state.get())
     network.send(patch)
+  }
+
+  function applyInMemory(patch: T): void {
+    state.pub(config.merge(state.get(), patch))
   }
 
   function close() {
